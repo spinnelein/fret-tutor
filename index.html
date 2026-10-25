@@ -168,10 +168,36 @@
     <section id="drill-settings" class="panel progress">
       <div class="progress-head">
         <h2>Your chords</h2>
-        <div class="row" id="chord-sets"></div>
+        <button id="sel-clear" class="mini">Clear all</button>
       </div>
-      <p class="note">Click chords to add them to your practice set (outlined). Colours show how well you know each
-        chord; the number is your median time. Faded chords have no playable shape in this tuning.</p>
+      <p id="sel-summary" class="sel-summary"></p>
+
+      <div class="set-group">
+        <h3>Learning path</h3>
+        <p class="note">Most players learn chords in this order. Add a set when you're ready for it; click it again
+          to take it out.</p>
+        <div id="sets-path" class="chips"></div>
+      </div>
+      <div class="set-group">
+        <h3>Chords in a key</h3>
+        <p class="note">The everyday chords of a key — what most songs in that key use.</p>
+        <div id="sets-keys" class="chips"></div>
+      </div>
+      <div class="set-group">
+        <h3>From a song or progression</h3>
+        <div class="row">
+          <select id="sel-prog" aria-label="Progression"></select>
+          <button id="sel-prog-add">Add its chords</button>
+        </div>
+        <p id="sel-prog-note" class="note"></p>
+      </div>
+
+      <div class="grid-head">
+        <h3>All chords</h3>
+        <label><input type="checkbox" id="grid-all"> Show all chord types</label>
+      </div>
+      <p class="note">Click any chord to add or remove it (outlined = practising). Colours show how well you know
+        each chord; the number is your median time. Faded chords have no playable shape in this tuning.</p>
       <div id="chord-grid" class="chord-grid"></div>
       <div class="legend">
         <span><i class="swatch lvl-0"></i>New</span>

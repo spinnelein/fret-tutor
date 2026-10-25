@@ -255,3 +255,19 @@ kbd { background: var(--panel); border: 1px solid var(--border); border-radius: 
 .play-top > * { min-width: 0; }
 .play-setup select, .play-options select { width: 100%; max-width: 100%; margin-left: 0; }
 .play-setup textarea { max-width: 100%; }
+
+/* ---- Your chords ---- */
+.sel-summary { margin: 6px 0 4px; font-size: 14px; line-height: 1.5; }
+.set-group { margin-top: 14px; }
+.set-group h3, .grid-head h3 { font-size: 14px; margin: 0; color: var(--text); }
+.set-group .note { margin: 2px 0 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+.chip-mark { width: 1em; text-align: center; color: var(--muted); }
+.chip-count { font-size: 11px; color: var(--muted); background: var(--bg); border-radius: 999px; padding: 0 6px; }
+.chip.on { border-color: var(--accent); color: var(--accent); background: rgba(106, 168, 255, .12); }
+.chip.on .chip-mark { color: var(--accent); }
+.chip.partial { border-color: var(--accent); border-style: dashed; }
+#sel-prog { max-width: 100%; }
+.grid-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.grid-head label { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }

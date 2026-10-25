@@ -50,4 +50,10 @@ const CHORD_SETS = {
   ],
 };
 
-if (typeof module !== 'undefined') module.exports = { INSTRUMENTS, CHORD_SETS };
+// Keys for the "chords in a key" sets: the keys most songs on each instrument are played in.
+const PRACTICE_KEYS = {
+  guitar: ['G', 'C', 'D', 'A', 'E', 'Am', 'Em'],
+  ukulele: ['C', 'G', 'F', 'D', 'A', 'Am'],
+};
+
+if (typeof module !== 'undefined') module.exports = { INSTRUMENTS, CHORD_SETS, PRACTICE_KEYS };

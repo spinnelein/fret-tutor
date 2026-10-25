@@ -23,6 +23,7 @@ const settings = {
   showTab: false,
   compareTunings: false,     // show the current chord in every tuning
   showPositions: false,      // show other ways to play the current chord
+  gridAll: false,            // show every chord type in the chord grid, not just the common ones
   order: 'smart',
   goal: 3,
   lenient: true,
@@ -623,8 +624,10 @@ function renderGrid() {
   grid.style.gridTemplateColumns = `minmax(118px, auto) repeat(${ROOTS.length}, minmax(40px, 1fr))`;
   grid.append(document.createElement('div'));
   for (const r of ROOTS) grid.append(el('div', 'col-head', r.name));
-  const selected = new Set(settings.selection[settings.instrument] ??= defaultSelection());
+  const selected = new Set(selectedKeys());
+  const usedTypes = new Set([...selected].map(k => Theory.chordFromKey(k).type.id));
   for (const type of CHORD_TYPES) {
+    if (!settings.gridAll && !COMMON_TYPES.includes(type.id) && !usedTypes.has(type.id)) continue;
     grid.append(el('div', 'row-head', type.name));
     for (const root of ROOTS) {
       const chord = Theory.buildChord(root, type);
@@ -658,12 +661,11 @@ function initGrid() {
   grid.addEventListener('click', e => {
     const cell = e.target.closest('.cell');
     if (!cell || cell.disabled) return;
-    const list = settings.selection[settings.instrument];
+    const list = selectedKeys();
     const i = list.indexOf(cell.dataset.key);
     if (i >= 0) list.splice(i, 1); else list.push(cell.dataset.key);
-    saveSettings();
-    renderGrid();
-    if (!state.chord || i >= 0 && state.chord.key === cell.dataset.key || !state.chord && list.length) nextChord();
+    cell.blur();
+    selectionChanged();
   });
   grid.addEventListener('mousemove', e => {
     const cell = e.target.closest('.cell');
@@ -677,28 +679,114 @@ function initGrid() {
   grid.addEventListener('mouseleave', () => { tip.hidden = true; });
 }
 
-function renderChordSets() {
-  const box = $('chord-sets');
-  box.innerHTML = '';
-  for (const set of CHORD_SETS[settings.instrument]) {
-    const b = el('button', 'mini', set.name);
-    b.title = set.chords.join(' ');
-    b.addEventListener('click', () => {
-      settings.selection[settings.instrument] = set.chords.map(s => Theory.parseChord(s).key);
-      saveSettings();
-      renderGrid();
-      nextChord();
-    });
-    box.append(b);
+// ---------- Your chords: sets you can combine ----------
+
+// The common chord types shown in the grid unless "Show all chord types" is on (or one is selected).
+const COMMON_TYPES = ['maj', 'min', 'dom7', 'maj7', 'min7', 'sus2', 'sus4', 'pow'];
+
+const selectedKeys = () => settings.selection[settings.instrument] ??= defaultSelection();
+
+const playableKeys = symbols => symbols.map(Theory.parseChord).filter(c => c && shapesFor(c).length).map(c => c.key);
+
+// The main chords of a key plus its V7: in G, G Am Bm C D Em D7; in A minor, Am C Dm Em F G E7.
+function keyChordSymbols(keyName) {
+  const key = Progressions.parseKey(keyName);
+  const numerals = key.minor ? ['i', 'bIII', 'iv', 'v', 'bVI', 'bVII', 'V7'] : ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'V7'];
+  return numerals.map(n => Theory.parseRoman(n, key).symbol);
+}
+
+function chordSets() {
+  const path = CHORD_SETS[settings.instrument].map(s => ({ name: s.name, keys: playableKeys(s.chords) }));
+  const keys = PRACTICE_KEYS[settings.instrument].map(k => ({
+    name: k.endsWith('m') ? `${k.slice(0, -1)} minor` : `${k} major`,
+    keys: playableKeys(keyChordSymbols(k)),
+  }));
+  return { path, keys };
+}
+
+function setState(set, selected) {
+  const n = set.keys.filter(k => selected.has(k)).length;
+  return n === 0 ? 'off' : n === set.keys.length ? 'on' : 'partial';
+}
+
+// Clicking a set adds all its chords, or, if they're all in already, takes them out again
+// (keeping any that also belong to another set that's fully on).
+function toggleSet(set) {
+  const list = selectedKeys();
+  const selected = new Set(list);
+  if (setState(set, selected) === 'on') {
+    const { path, keys } = chordSets();
+    const keep = new Set([...path, ...keys].filter(o => o !== set && o.name !== set.name && setState(o, selected) === 'on').flatMap(o => o.keys));
+    settings.selection[settings.instrument] = list.filter(k => !set.keys.includes(k) || keep.has(k));
+  } else {
+    for (const k of set.keys) if (!selected.has(k)) list.push(k);
   }
-  const clear = el('button', 'mini', 'Clear');
-  clear.addEventListener('click', () => {
-    settings.selection[settings.instrument] = [];
-    saveSettings();
-    renderGrid();
-    nextChord();
-  });
-  box.append(clear);
+  selectionChanged();
+}
+
+function selectionChanged() {
+  saveSettings();
+  renderChordSets();
+  renderGrid();
+  const list = selectedKeys();
+  if (!state.chord || !list.includes(state.chord.key)) nextChord();
+}
+
+function renderChordSets() {
+  const selected = new Set(selectedKeys());
+  const { path, keys } = chordSets();
+  for (const [boxId, sets] of [['sets-path', path], ['sets-keys', keys]]) {
+    const box = $(boxId);
+    box.innerHTML = '';
+    for (const set of sets) {
+      const st = setState(set, selected);
+      const chip = el('button', `chip ${st}`);
+      chip.setAttribute('aria-pressed', st === 'on');
+      chip.title = (st === 'on' ? 'Click to remove: ' : 'Click to add: ') + set.keys.map(k => Theory.chordFromKey(k).symbol).join(' ');
+      chip.append(el('span', 'chip-mark', st === 'on' ? '✓' : st === 'partial' ? '◐' : '+'), el('span', '', set.name),
+        el('span', 'chip-count', String(set.keys.length)));
+      chip.addEventListener('click', () => { toggleSet(set); chip.blur(); });
+      box.append(chip);
+    }
+  }
+
+  // Summary of what's being practised, grouped the way the grid is ordered.
+  const chords = [...selected].map(Theory.chordFromKey)
+    .sort((a, b) => CHORD_TYPES.indexOf(a.type) - CHORD_TYPES.indexOf(b.type) || a.root.pc - b.root.pc);
+  $('sel-summary').textContent = chords.length
+    ? `Practising ${chords.length} chord${chords.length === 1 ? '' : 's'}: ${chords.map(c => c.symbol).join(', ')}`
+    : 'No chords selected yet — add a set below or click chords in the grid.';
+  $('sel-clear').disabled = !chords.length;
+
+  // Progression picker (same list as Play along).
+  const sel = $('sel-prog');
+  const prev = sel.value;
+  fillProgressionMenu(sel, progressionList());
+  if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+
+// The chords of a progression, in the key (and transposition) last used for it in Play along.
+function progressionChords(id) {
+  const p = progressionList().find(x => x.id === id);
+  if (!p) return [];
+  const text = settings.progText?.[p.id] ?? p.text;
+  const key = Progressions.parseKey(settings.progKeys[p.id] ?? p.key);
+  const parsed = Progressions.parse(text, key, settings.progTranspose[p.id] ?? 0);
+  return [...new Map(parsed.bars.flat().map(c => [c.key, c])).values()];
+}
+
+function addProgressionChords() {
+  const chords = progressionChords($('sel-prog').value);
+  const playable = chords.filter(c => shapesFor(c).length);
+  const list = selectedKeys();
+  const added = playable.filter(c => !list.includes(c.key));
+  for (const c of added) list.push(c.key);
+  const skipped = chords.length - playable.length;
+  $('sel-prog-note').textContent = (added.length
+    ? `Added ${added.map(c => c.symbol).join(', ')}.`
+    : `Already practising all of its chords (${playable.map(c => c.symbol).join(', ')}).`) +
+    (skipped ? ` ${skipped} chord${skipped === 1 ? ' has' : 's have'} no comfortable shape in this tuning.` : '');
+  selectionChanged();
 }
 
 // ---------- Play along ----------
@@ -1388,6 +1476,15 @@ function wire() {
   });
   $('input-select').addEventListener('change', () => { settings.input = inputChoice(); saveSettings(); selectInput(); });
 
+  $('sel-clear').addEventListener('click', e => {
+    settings.selection[settings.instrument] = [];
+    selectionChanged();
+    e.currentTarget.blur();
+  });
+  $('sel-prog-add').addEventListener('click', e => { addProgressionChords(); e.currentTarget.blur(); });
+  $('sel-prog').addEventListener('change', () => { $('sel-prog-note').textContent = ''; });
+  $('grid-all').checked = settings.gridAll;
+  $('grid-all').addEventListener('change', e => { settings.gridAll = e.target.checked; saveSettings(); renderGrid(); });
   $('btn-diagram').addEventListener('click', e => { toggleDiagram(); e.currentTarget.blur(); });
   $('btn-skip').addEventListener('click', e => { skip(); e.currentTarget.blur(); });
   $('btn-tab').addEventListener('click', e => { settings.showTab = !settings.showTab; saveSettings(); renderDrill(); e.currentTarget.blur(); });
