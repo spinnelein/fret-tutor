@@ -19,9 +19,15 @@ const MicInput = (() => {
   const HISTORY = 5;           // frames remembered per note
   const NEEDED = 3;            // ...of which this many must contain the note for it to sound
   const MAX_NOTES = 6;
+  const LOUD_ALONE = Math.pow(10, -18 / 20); // within 18 dB of the loudest peak: counts without overtones
   const MAX_HARMONIC = 32;      // low reeds have audible overtones far up the spectrum
 
-  const settings = { gateDb: -70, rangeDb: 30 };
+  // gateDb: ignore moments quieter than this. noiseProfile: the room's noise level at each pitch,
+  // measured while it's quiet ({ lowMidi, levels: dB per semitone }); a note must rise clearly above
+  // the noise at its own pitch. Without a profile, the gate applies to every note instead.
+  const settings = { gateDb: -70, rangeDb: 30, noiseProfile: null };
+  const NOISE_MARGIN = 8; // dB a note must rise above the room's noise at its pitch
+  const BURIED_RATIO = 3; // a note buried in the noise can explain overtones up to 3x its own level
 
   let ctx = null, stream = null, analyser = null, timer = null;
   let spectrumDb = null, timeData = null;
@@ -41,11 +47,23 @@ const MicInput = (() => {
     let max = 0;
     for (let k = lo; k <= hi; k++) if (mag[k] > max) max = mag[k];
     const maxDb = 20 * Math.log10(max || 1e-12);
-    if (maxDb < opts.gateDb) return { notes: [], peaks: [], maxDb };
+    if (!opts.noiseProfile && maxDb < opts.gateDb) return { notes: [], peaks: [], maxDb };
 
-    // A peak must be within rangeDb of the loudest one and also above the noise gate, so steady
-    // background noise (hum, fans) stays out even while you're playing.
-    const floor = Math.max(max * Math.pow(10, -opts.rangeDb / 20), Math.pow(10, opts.gateDb / 20));
+    // A peak must be within rangeDb of the loudest one, and clear of the background noise so steady
+    // hum and fans stay out even while you're playing. With a measured noise profile that's judged
+    // at each peak's own pitch: room noise is mostly low rumble, and one level for every pitch would
+    // also hide quiet high notes (a thin guitar string) that are well clear of the noise.
+    const floor = max * Math.pow(10, -opts.rangeDb / 20);
+    const profile = opts.noiseProfile;
+    const noiseAt = profile
+      ? f => {
+        const i = Math.round(freqToMidi(f)) - profile.lowMidi;
+        // Moving the noise filter slider from where the measurement set it raises or lowers the
+        // whole profile by the same amount.
+        const shift = profile.gate !== undefined ? opts.gateDb - profile.gate : 0;
+        return Math.pow(10, (profile.levels[Math.max(0, Math.min(profile.levels.length - 1, i))] + NOISE_MARGIN + shift) / 20);
+      }
+      : () => Math.pow(10, opts.gateDb / 20);
     const db = k => 20 * Math.log10(mag[k] || 1e-12);
 
     // Local maxima above the floor, with parabolic interpolation for a precise frequency.
@@ -56,13 +74,17 @@ const MicInput = (() => {
       const a = db(k - 1), b = db(k), c = db(k + 1);
       const denom = a - 2 * b + c;
       const p = denom ? 0.5 * (a - c) / denom : 0;
-      peaks.push({ freq: (k + p) * binHz, amp: Math.pow(10, (b - 0.25 * (a - c) * p) / 20) });
+      const freq = (k + p) * binHz;
+      peaks.push({ freq, amp: Math.pow(10, (b - 0.25 * (a - c) * p) / 20), quiet: m < noiseAt(freq) });
     }
 
     const near = (f, target, cents) => Math.abs(1200 * Math.log2(f / target)) < cents;
     const hasPeakNear = (f, cents) => peaks.some(p => near(p.freq, f, cents));
 
     const found = [];
+    // Low notes buried in room noise (a guitar's low G sits right on 100 Hz mains hum) can't count
+    // as notes, but their overtones are still there and mustn't be mistaken for notes either.
+    const buried = [];
     for (const peak of peaks) {
       if (peak.freq > MAX_FUNDAMENTAL_HZ) break;
       const midiF = freqToMidi(peak.freq);
@@ -74,13 +96,28 @@ const MicInput = (() => {
       const isOvertone = found.some(n => [n.freq, midiToFreq(n.midi)].some(f0 => {
         const h = Math.round(peak.freq / f0);
         return h >= 2 && h <= MAX_HARMONIC && near(peak.freq, f0 * h, HARMONIC_TOLERANCE);
-      }));
+      })) ||
+        // A buried note only explains peaks about as quiet as itself (a string played an octave
+        // above the hum is far louder than the hum's overtones), and only at exact multiples of
+        // its measured pitch, since that's where overtones really are: 50 Hz hum's 200 Hz overtone
+        // is a third of a semitone from the open G string, and mustn't swallow it.
+        buried.some(n => {
+          if (peak.amp > n.amp * BURIED_RATIO) return false;
+          const h = Math.round(peak.freq / n.freq);
+          return h >= 2 && h <= MAX_HARMONIC && near(peak.freq, n.freq * h, 12);
+        });
       if (isOvertone) continue;
 
-      // A real reed note has overtones; a lone peak is more likely noise. (Very high notes may
-      // have their overtones above the range we look at, so they get a pass.)
-      const supported = peak.freq * 2 > MAX_HZ ||
-        hasPeakNear(peak.freq * 2, HARMONIC_TOLERANCE) || hasPeakNear(peak.freq * 3, HARMONIC_TOLERANCE);
+      // A real note has overtones; a lone peak is more likely noise. But a quiet note on a thin
+      // string barely has audible overtones, so a peak that's loud in its own right counts too
+      // (brief noise is still filtered out by needing the note in several readings in a row).
+      // Very high notes may have their overtones above the range we look at, so they get a pass.
+      const hasOvertones = hasPeakNear(peak.freq * 2, HARMONIC_TOLERANCE) || hasPeakNear(peak.freq * 3, HARMONIC_TOLERANCE);
+      if (peak.quiet) {
+        if (hasOvertones) buried.push({ midi, freq: peak.freq, amp: peak.amp });
+        continue;
+      }
+      const supported = peak.freq * 2 > MAX_HZ || peak.amp >= max * LOUD_ALONE || hasOvertones;
       if (!supported) continue;
 
       const existing = found.find(n => n.midi === midi);
@@ -88,12 +125,13 @@ const MicInput = (() => {
       else if (peak.amp > existing.amp) Object.assign(existing, { freq: peak.freq, amp: peak.amp });
     }
 
+    const audible = peaks.filter(x => !x.quiet);
     const notes = found
       .sort((x, y) => y.amp - x.amp)
       .slice(0, MAX_NOTES)
       .map(n => n.midi)
       .sort((x, y) => x - y);
-    return { notes, peaks, maxDb };
+    return { notes, peaks: audible, maxDb };
   }
 
   function tick() {
@@ -226,10 +264,27 @@ const MicInput = (() => {
     return sampleRate / best.lag;
   }
 
+  // The room's noise at each semitone from C2 up: for each semitone band, the loudest level in each
+  // recorded moment, then the 90th percentile over the moments.
+  function noiseProfile(spectraDb, binHz) {
+    const lowMidi = 36, highMidi = Math.ceil(freqToMidi(MAX_HZ));
+    const levels = [];
+    for (let m = lowMidi; m <= highMidi; m++) {
+      const k0 = Math.floor(midiToFreq(m - 0.5) / binHz), k1 = Math.ceil(midiToFreq(m + 0.5) / binHz);
+      const perFrame = spectraDb.map(spec => {
+        let top = -200;
+        for (let k = k0; k <= k1 && k < spec.length; k++) if (spec[k] > top) top = spec[k];
+        return top;
+      }).sort((a, b) => a - b);
+      levels.push(Math.round(perFrame[Math.floor(perFrame.length * 0.9)] * 10) / 10);
+    }
+    return { lowMidi, levels };
+  }
+
   const isRunning = () => !!timer && ctx.state === 'running';
   const isWaitingForClick = () => !!timer && ctx.state === 'suspended';
 
-  return { start, stop, detectNotes, pitch, settings, isRunning, isWaitingForClick, MIN_HZ, MAX_HZ };
+  return { start, stop, detectNotes, noiseProfile, pitch, settings, isRunning, isWaitingForClick, MIN_HZ, MAX_HZ };
 })();
 
 if (typeof module !== 'undefined') module.exports = MicInput;

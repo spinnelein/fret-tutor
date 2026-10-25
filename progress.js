@@ -12,7 +12,7 @@
 const Progress = (() => {
   const KEEP = 20;          // attempts stored per chord or change
   const WINDOW = 10;        // attempts used to judge a chord
-  const MAX_TIME = 30;      // seconds; longer times (walked away?) are capped
+  const MAX_TIME = 30;      // seconds; longer times (walked away?) aren't counted as a time
   const WORKING_SET = 5;    // chords being learned before new ones are held back
   const LEVELS = ['New', 'Learning', 'Getting there', 'Good', 'Mastered'];
 
@@ -28,8 +28,9 @@ const Progress = (() => {
     const tries = recent.length;
     const correct = recent.filter(r => r.ok).length;
     const acc = tries ? correct / tries : 0;
-    const clean = recent.filter(r => r.ok && !r.hint).map(r => r.t);
-    const time = median(clean.length >= 3 ? clean : recent.filter(r => r.ok).map(r => r.t));
+    const timed = recent.filter(r => r.ok && r.t !== null);
+    const clean = timed.filter(r => !r.hint).map(r => r.t);
+    const time = median(clean.length >= 3 ? clean : timed.map(r => r.t));
     let level = 0;
     if (tries) {
       if (tries >= 5 && acc >= 0.9 && time !== null && time <= goal && clean.length >= 3) level = 4;
@@ -55,7 +56,8 @@ const Progress = (() => {
       const entry = map[key] ??= { results: [] };
       entry.results.push({
         ok: !!result.ok,
-        t: result.ok ? Math.round(Math.min(result.time, MAX_TIME) * 100) / 100 : null,
+        // Over MAX_TIME the player was probably away: it counts as played, but not as a time.
+        t: result.ok && result.time <= MAX_TIME ? Math.round(result.time * 100) / 100 : null,
         hint: !!result.hint,
         at: Date.now(),
       });
@@ -111,7 +113,7 @@ const Progress = (() => {
           from, to,
           tries: recent.length,
           correct: recent.filter(r => r.ok).length,
-          time: median(recent.filter(r => r.ok).map(r => r.t)),
+          time: median(recent.filter(r => r.ok && r.t !== null).map(r => r.t)),
           lastAt: e.results[e.results.length - 1].at,
         };
       }).sort((a, b) => (b.time ?? 99) - (a.time ?? 99));

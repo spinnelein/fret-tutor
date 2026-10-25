@@ -191,7 +191,7 @@ async function selectInput() {
   if (mic) {
     try {
       await MicInput.start({ onChange: notes => { if (!calibration) { state.mic = notes; inputChanged(); } }, onFrame, onState: renderInputStatus });
-      if (!settings.micCalibrated) startCalibration();
+      if (!settings.micCalibrated || !settings.micNoise) startCalibration();
     } catch (err) {
       micError = err.name === 'NotAllowedError' ? 'Mic: permission denied' : 'Mic: not available';
     }
@@ -226,6 +226,7 @@ function buildMicPanel() {
       saveSettings();
     });
   }
+  MicInput.settings.noiseProfile = settings.micNoise ?? null; // the room measured last time
   $('mic-show').addEventListener('change', e => { $('mic-canvas').hidden = !e.target.checked; });
   $('mic-calibrate').addEventListener('click', e => { if (MicInput.isRunning()) startCalibration(); e.currentTarget.blur(); });
 }
@@ -277,7 +278,7 @@ const CALIBRATE_MS = 2000;
 let calibration = null;
 
 function startCalibration() {
-  calibration = { samples: [], until: performance.now() + CALIBRATE_MS };
+  calibration = { samples: [], spectra: [], until: performance.now() + CALIBRATE_MS };
   MicInput.settings.gateDb = 0; // hear nothing as notes while measuring
   state.mic = [];
   inputChanged();
@@ -288,8 +289,10 @@ function startCalibration() {
 function calibrationFrame(frame) {
   if (!calibration) return;
   if (Number.isFinite(frame.maxDb)) calibration.samples.push(frame.maxDb);
+  if (frame.spectrumDb) calibration.spectra.push(frame.spectrumDb.slice());
   if (performance.now() < calibration.until) return;
   const samples = calibration.samples.sort((a, b) => a - b);
+  const calibration_spectra = calibration.spectra;
   calibration = null;
   $('mic-calibrate').disabled = false;
   if (samples.length < 10) {
@@ -302,6 +305,11 @@ function calibrationFrame(frame) {
   const slider = $('mic-gate');
   slider.value = gate;
   slider.dispatchEvent(new Event('input')); // updates the label, the mic and the saved setting
+  // The room's noise at each pitch: notes are judged against the noise at their own pitch, so low
+  // hum doesn't hide quiet high notes.
+  const profile = { ...MicInput.noiseProfile(calibration_spectra, frame.binHz), gate };
+  MicInput.settings.noiseProfile = profile;
+  settings.micNoise = profile;
   settings.micCalibrated = true;
   saveSettings();
   $('mic-calib-status').textContent = gate >= -40
@@ -462,7 +470,8 @@ function resetAttempt() {
 function drillSuccess() {
   const secs = (performance.now() - state.shownAt) / 1000;
   state.progress.record(state.chord, { ok: true, time: secs, hint: state.hintShown });
-  setFeedback(`Correct! ${secs.toFixed(1)}s` + (state.hintShown ? ' (with diagram)' : ''), 'good');
+  const timeText = secs > 30 ? "(time not counted — you'd been away a while)" : `${secs.toFixed(1)}s`;
+  setFeedback(`Correct! ${timeText}` + (state.hintShown ? ' (with diagram)' : ''), 'good');
   state.celebrating = true;
   state.prev = state.chord;
   $('drill-name').classList.add('good');
@@ -1589,6 +1598,13 @@ function wire() {
 }
 
 // ---------- Boot ----------
+
+// Time spent in another tab or app doesn't count: restart the clocks on return.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  state.shownAt = performance.now();
+  if (state.play && state.play.mode === 'wait') state.play.lastAt = performance.now();
+});
 
 loadSettings();
 useProgress();
