@@ -249,3 +249,9 @@ kbd { background: var(--panel); border: 1px solid var(--border); border-radius: 
 .calib-status { color: var(--warn) !important; }
 .calib-status:empty { display: none; }
 #mic-calibrate { align-self: flex-start; margin-top: 2px; }
+
+/* Let the play-along panels shrink to a phone's width (grid items otherwise keep their widest
+   content's width, such as a long option in the mode menu). */
+.play-top > * { min-width: 0; }
+.play-setup select, .play-options select { width: 100%; max-width: 100%; margin-left: 0; }
+.play-setup textarea { max-width: 100%; }
