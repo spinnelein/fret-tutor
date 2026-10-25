@@ -27,8 +27,9 @@ const INSTRUMENTS = [
     bassMatters: false,   // re-entrant tuning: the "lowest" string is often not the lowest note
     staffTranspose: 0,
     tunings: [
-      { id: 'gceaHigh', name: 'Standard, high G (G C E A)', strings: [67, 60, 64, 69] },
-      { id: 'gceaLow', name: 'Low G (G C E A)', strings: [55, 60, 64, 69] },
+      // standard: shapes every chart teaches, shown first even where another scores as "easier".
+      { id: 'gceaHigh', name: 'Standard, high G (G C E A)', strings: [67, 60, 64, 69], standard: { Em: '0,4,3,2', D7: '2,2,2,3' } },
+      { id: 'gceaLow', name: 'Low G (G C E A)', strings: [55, 60, 64, 69], standard: { Em: '0,4,3,2', D7: '2,2,2,3' } },
       { id: 'baritone', name: 'Baritone (D G B E)', strings: [50, 55, 59, 64] },
     ],
   },
@@ -44,9 +45,16 @@ const CHORD_SETS = {
     { name: 'Power chords', chords: ['E5', 'F5', 'G5', 'A5', 'B♭5', 'C5', 'D5'] },
   ],
   ukulele: [
-    { name: 'First chords', chords: ['C', 'Am', 'F', 'G'] },
-    { name: 'Next chords', chords: ['G7', 'C7', 'Dm', 'Em', 'A', 'D', 'E7', 'A7'] },
-    { name: 'More chords', chords: ['B♭', 'Gm', 'Fmaj7', 'Cmaj7', 'Am7', 'Dm7', 'E', 'Bm'] },
+    // Each step adds only new chords; the steps combine. Follows how ukulele is usually taught:
+    // C, Am, F, G first, then the rest of the key of C, then the other common keys (C-A-G-F-D),
+    // leaving the first barre chord (B♭) and the hard E for later.
+    { name: '1. First four: C, Am, F, G', chords: ['C', 'Am', 'F', 'G'] },
+    { name: '2. Add C7, G7, Dm', chords: ['C7', 'G7', 'Dm'] },
+    { name: '3. Key of G: D, Em, D7', chords: ['D', 'Em', 'D7'] },
+    { name: '4. Keys of D and A', chords: ['A', 'A7', 'E7', 'Bm', 'F♯m'] },
+    { name: '5. Key of F: B♭ (first barre), Gm', chords: ['B♭', 'Gm'] },
+    { name: '6. Easy colour chords', chords: ['Am7', 'Cmaj7', 'Fmaj7', 'Dm7', 'Em7'] },
+    { name: '7. The tricky ones', chords: ['E', 'B', 'E♭', 'Fm'] },
   ],
 };
 

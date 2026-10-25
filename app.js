@@ -80,7 +80,7 @@ const tuningKey = () => `${settings.instrument}:${tuning().strings.join('-')}`;
 const shapeCache = new Map();
 function shapesForTuning(chord, t) {
   const key = `${settings.instrument}:${t.strings.join('-')}|${chord.key}`;
-  if (!shapeCache.has(key)) shapeCache.set(key, Voicings.positions(chord, t.strings, instrument()));
+  if (!shapeCache.has(key)) shapeCache.set(key, Voicings.positions(chord, t.strings, instrument(), 5, t.standard?.[chord.symbol]));
   return shapeCache.get(key);
 }
 const shapesFor = chord => shapesForTuning(chord, tuning());
@@ -627,7 +627,7 @@ function renderGrid() {
   const selected = new Set(selectedKeys());
   const usedTypes = new Set([...selected].map(k => Theory.chordFromKey(k).type.id));
   for (const type of CHORD_TYPES) {
-    if (!settings.gridAll && !COMMON_TYPES.includes(type.id) && !usedTypes.has(type.id)) continue;
+    if (!settings.gridAll && !commonTypes().includes(type.id) && !usedTypes.has(type.id)) continue;
     grid.append(el('div', 'row-head', type.name));
     for (const root of ROOTS) {
       const chord = Theory.buildChord(root, type);
@@ -682,7 +682,8 @@ function initGrid() {
 // ---------- Your chords: sets you can combine ----------
 
 // The common chord types shown in the grid unless "Show all chord types" is on (or one is selected).
-const COMMON_TYPES = ['maj', 'min', 'dom7', 'maj7', 'min7', 'sus2', 'sus4', 'pow'];
+// Power chords are a guitar technique; ukulele players rarely use them.
+const commonTypes = () => ['maj', 'min', 'dom7', 'maj7', 'min7', 'sus2', 'sus4', ...(settings.instrument === 'guitar' ? ['pow'] : [])];
 
 const selectedKeys = () => settings.selection[settings.instrument] ??= defaultSelection();
 
@@ -1164,7 +1165,7 @@ function currentPlan() {
   const fixed = {};
   for (const [key, frets] of Object.entries(settings.shapes[tuningKey()] ?? {})) fixed[key] = frets;
   const cacheKey = [tuningKey(), steps.map(c => c.key).join(','), loop, JSON.stringify(fixed)].join('|');
-  if (planCache.key !== cacheKey) planCache = { key: cacheKey, choices: Voicings.plan(steps, tuning().strings, instrument(), loop, fixed) };
+  if (planCache.key !== cacheKey) planCache = { key: cacheKey, choices: Voicings.plan(steps, tuning().strings, instrument(), loop, fixed, tuning().standard ?? {}) };
   return { steps, stepOf, loop, choices: planCache.choices };
 }
 

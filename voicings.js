@@ -172,12 +172,14 @@ const Voicings = (() => {
     return s.frets.slice(first, last + 1).some(f => f < 0);
   }
 
-  function positions(chord, strings, inst, max = 5) {
+  // prefer: frets ("0,4,3,2") of the shape charts teach for this chord, to show first.
+  function positions(chord, strings, inst, max = 5, prefer = null) {
     const area = s => (s.maxFret <= 4 ? 0 : s.minFret);          // open position counts as 0
     // Up the neck, learners use closed shapes (no open strings) that can slide to any key, and
     // barre chords are the normal way to play them there, so a barre isn't counted against them
     // and fuller (more strings) versions are preferred.
     const ranked = generate(chord, strings, inst, 400);
+    if (prefer && !ranked.some(s => s.frets.join() === prefer)) prefer = null;
     if (!ranked.length) return [];
     const all = ranked
       .filter(s => area(s) === 0 || (!s.frets.includes(0) && !hasMiddleMute(s)))
@@ -185,7 +187,8 @@ const Voicings = (() => {
       .sort((a, b) => a.rank - b.rank)
       .map(x => x.s);
     const differs = (a, b) => a.frets.filter((f, i) => f !== b.frets[i]).length;
-    const picked = [ranked[0]]; // the easiest shape — the one on chord charts — always comes first
+    // The shape on chord charts comes first: the standard one if given, otherwise the easiest.
+    const picked = [ranked.find(s => s.frets.join() === prefer) ?? ranked[0]];
     for (const s of all) {
       if (picked.some(p => differs(p, s) <= 2 || Math.abs(area(p) - area(s)) < 3)) continue;
       picked.push(s);
@@ -220,10 +223,10 @@ const Voicings = (() => {
 
   // Shapes worth considering for a chord in a progression: the usual positions, plus other
   // open-position voicings that are nearly as easy as the standard one.
-  function candidates(chord, strings, inst) {
-    const pos = positions(chord, strings, inst);
+  function candidates(chord, strings, inst, prefer = null) {
+    const pos = positions(chord, strings, inst, 5, prefer);
     if (!pos.length) return [];
-    const easiest = pos[0].score;
+    const easiest = pos[0].score; // the standard shape when one is given
     // Never thinner than the standard shape: saving a finger by muting strings isn't what teachers do.
     const sounding = s => s.frets.filter(f => f >= 0).length;
     const full = sounding(pos[0]);
@@ -235,7 +238,11 @@ const Voicings = (() => {
       const key = shape.frets.join();
       if (seen.has(key)) continue;
       seen.add(key);
-      for (const f of fingerings(shape)) out.push({ shape, fingers: f.fingers, base: f.base, extra: shape.score - easiest });
+      // How much harder than the chart shape. Shapes that score "easier" than a standard one aren't
+      // free: a different shape from the one on the chart has to earn its place by saving moves.
+      const isStandard = shape === pos[0];
+      const extra = Math.max(0, shape.score - easiest) + (prefer && !isStandard ? 1 : 0);
+      for (const f of fingerings(shape)) out.push({ shape, fingers: f.fingers, base: f.base, extra });
     }
     return out;
   }
@@ -262,13 +269,14 @@ const Voicings = (() => {
 
   // Pick a shape and fingering for each chord so the changes are as easy as possible while staying
   // close to the standard shapes. chords: in playing order (repeats already merged); loop: the last
-  // chord leads back to the first; fixed: chord key -> frets the player chose, kept as-is.
-  function plan(chords, strings, inst, loop = false, fixed = {}) {
+  // chord leads back to the first; fixed: chord key -> frets the player chose, kept as-is;
+  // standard: chord symbol -> frets of the shape charts teach (treated as the easiest).
+  function plan(chords, strings, inst, loop = false, fixed = {}, standard = {}) {
     const DIFFICULTY = 0.4; // a shape this much harder than the easiest must save this many finger moves
     const opts = chords.map(c => {
-      let list = candidates(c, strings, inst);
-      if (fixed[c.key]) list = list.filter(x => x.shape.frets.join() === fixed[c.key]) || list;
-      return list.length ? list : candidates(c, strings, inst);
+      const all = candidates(c, strings, inst, standard[c.symbol]);
+      const list = fixed[c.key] ? all.filter(x => x.shape.frets.join() === fixed[c.key]) : all;
+      return list.length ? list : all;
     });
     if (opts.some(o => !o.length)) return chords.map((c, i) => opts[i][0] ? { ...opts[i][0], chord: c } : null);
     const n = chords.length;
