@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fret Tutor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Fret Tutor</h1>
+    <div class="header-controls">
+      <select id="instrument" title="Instrument"></select>
+      <select id="tuning" title="Tuning"></select>
+      <span id="input-status" class="status off">Input: off</span>
+      <select id="input-select" title="Input: microphone or MIDI"></select>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button data-mode="drill" role="tab">Chords</button>
+    <button data-mode="play" role="tab">Play along</button>
+    <button data-mode="tuner" role="tab">Tuner</button>
+  </nav>
+
+  <main>
+    <!-- Chord drill -->
+    <section id="mode-drill" class="mode">
+      <div class="stage">
+        <div class="stage-main">
+          <div id="drill-name" class="chord-name">—</div>
+          <div id="drill-long" class="chord-long"></div>
+          <div id="drill-badge" class="badge" hidden>New chord</div>
+          <div id="drill-feedback" class="feedback"></div>
+        </div>
+        <div class="stage-side">
+          <div id="drill-diagram" class="diagram"></div>
+          <button id="positions-toggle" class="link"></button>
+          <div id="drill-tab" class="tab-view" hidden></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="btn-diagram" aria-pressed="true">Diagram: on (Enter)</button>
+        <button id="btn-skip">Skip (Space)</button>
+        <button id="btn-tab" aria-pressed="false">Tab: off</button>
+        <button id="btn-compare" aria-pressed="false">Compare tunings: off</button>
+      </div>
+      <div id="positions" class="compare" hidden></div>
+      <div id="compare" class="compare" hidden></div>
+    </section>
+
+    <!-- Play along -->
+    <section id="mode-play" class="mode" hidden>
+      <div class="play-top">
+        <div class="panel play-setup">
+          <label>Progression <select id="prog-select"></select></label>
+          <div class="row">
+            <label id="key-wrap">Key <select id="prog-key"></select></label>
+            <span id="transpose-wrap" class="transpose">Transpose
+              <button id="tr-down" title="Down a semitone">−</button><span id="tr-val">0</span><button id="tr-up" title="Up a semitone">+</button></span>
+          </div>
+          <p id="prog-about" class="note"></p>
+          <a id="prog-song" class="song-link" target="_blank" rel="noopener" hidden></a>
+          <label class="block">Chords <span class="note">— bars separated by |, e.g. <code>| G | C D | Em | % |</code>, or numerals like <code>I IV V7</code></span>
+            <textarea id="prog-text" rows="2" spellcheck="false"></textarea></label>
+          <div id="prog-errors" class="errors"></div>
+          <div class="row">
+            <button id="prog-save">Save as my progression…</button>
+            <button id="prog-delete">Delete</button>
+          </div>
+        </div>
+        <div class="panel play-options">
+          <label>Mode
+            <select id="play-mode">
+              <option value="wait">Wait for me — next chord when you play this one</option>
+              <option value="beat">Keep the beat — chords change in time</option>
+            </select></label>
+          <label class="beat-only">Tempo <input type="range" id="tempo" min="30" max="160" step="2"> <span id="tempo-val"></span> BPM</label>
+          <label class="beat-only">Beats per bar
+            <select id="beats"><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+          <label class="beat-only"><input type="checkbox" id="click"> Metronome click</label>
+          <label><input type="checkbox" id="loop"> Loop</label>
+          <button id="play-start" class="primary">Start</button>
+        </div>
+      </div>
+
+      <div id="bars" class="bars"></div>
+      <div class="play-stage">
+        <div class="now">
+          <div class="label">Now</div>
+          <div id="now-name" class="chord-name">—</div>
+          <div id="now-diagram" class="diagram"></div>
+        </div>
+        <div class="next">
+          <div class="label">Next</div>
+          <div id="next-name" class="next-name">—</div>
+          <div id="next-diagram" class="diagram small"></div>
+          <div id="change-tip" class="change-tip"></div>
+        </div>
+      </div>
+      <div id="beat-dots" class="beat-dots"></div>
+      <div id="play-feedback" class="feedback"></div>
+      <div id="play-summary" class="panel summary" hidden></div>
+
+      <div class="panel changes">
+        <h3>Chord changes</h3>
+        <p class="note">Switching between chords is where most practice time goes. Pick two chords and see how many
+          times you can switch between them in a minute, then try to beat it next time.</p>
+        <div class="row">
+          <input id="omc-a" class="chord-input" value="G" aria-label="First chord">
+          <span>↔</span>
+          <input id="omc-b" class="chord-input" value="C" aria-label="Second chord">
+          <button id="omc-start">Start 1-minute changes</button>
+        </div>
+        <div id="changes-list"></div>
+      </div>
+    </section>
+
+    <!-- Tuner -->
+    <section id="mode-tuner" class="mode" hidden>
+      <div class="tuner">
+        <div id="tuner-string" class="tuner-target">Play a single string</div>
+        <div id="tuner-note" class="tuner-note">–</div>
+        <div class="tuner-meter">
+          <div class="tuner-zone"></div>
+          <div class="tuner-ticks"><span>−50</span><span>−25</span><span>0</span><span>+25</span><span>+50</span></div>
+          <div id="tuner-needle" class="tuner-needle idle"></div>
+        </div>
+        <div id="tuner-cents" class="tuner-cents"></div>
+        <div id="tuner-strings" class="tuner-strings"></div>
+        <p class="note">Pluck one string and let it ring. Tighten the string if the needle is left of centre (flat),
+          loosen it if it's right (sharp). The microphone input must be selected.</p>
+      </div>
+    </section>
+
+    <!-- Shared: fretboard and input -->
+    <section id="board" class="board">
+      <div id="fretboard" class="fretboard-wrap"></div>
+      <div id="heard" class="heard">Heard: —</div>
+      <div id="mic-panel" class="panel mic-panel" hidden>
+        <div class="mic-row">
+          <div class="mic-control">
+            <span class="muted-text">Mic level</span>
+            <div class="meter"><div id="mic-level"></div></div>
+            <small>Should jump when you play. If it barely moves, move closer to the mic.</small>
+          </div>
+          <div class="mic-control">
+            <label for="mic-gate">Background noise filter</label>
+            <div><input type="range" id="mic-gate" min="-100" max="-30" step="1"> <span id="mic-gate-val"></span></div>
+            <small>Slide right if notes appear when you're not playing (room noise, talking).
+              Slide left if your playing isn't picked up at all.</small>
+            <small id="mic-calib-status" class="calib-status"></small>
+            <button id="mic-calibrate" class="mini">Measure room noise</button>
+          </div>
+          <div class="mic-control">
+            <label for="mic-range">Quiet note pickup</label>
+            <div><input type="range" id="mic-range" min="15" max="50" step="1"> <span id="mic-range-val"></span></div>
+            <small>Slide left if notes you didn't play show up (often echoes of the strings you did play).
+              Slide right if quieter strings of your chord are missed.</small>
+          </div>
+          <label class="mic-show"><input type="checkbox" id="mic-show"> Show what the mic hears</label>
+        </div>
+        <canvas id="mic-canvas" width="1150" height="170" hidden></canvas>
+      </div>
+    </section>
+
+    <!-- Chord drill: chord choice and progress -->
+    <section id="drill-settings" class="panel progress">
+      <div class="progress-head">
+        <h2>Your chords</h2>
+        <div class="row" id="chord-sets"></div>
+      </div>
+      <p class="note">Click chords to add them to your practice set (outlined). Colours show how well you know each
+        chord; the number is your median time. Faded chords have no playable shape in this tuning.</p>
+      <div id="chord-grid" class="chord-grid"></div>
+      <div class="legend">
+        <span><i class="swatch lvl-0"></i>New</span>
+        <span><i class="swatch lvl-1"></i>Learning</span>
+        <span><i class="swatch lvl-2"></i>Getting there</span>
+        <span><i class="swatch lvl-3"></i>Good</span>
+        <span><i class="swatch lvl-4"></i>Mastered (from memory, within your goal time)</span>
+      </div>
+      <div id="grid-tip" class="grid-tip" role="tooltip" hidden></div>
+    </section>
+
+    <section class="panel options">
+      <h2>Options</h2>
+      <div class="options-grid">
+        <label>Chord order
+          <select id="opt-order">
+            <option value="smart">Smart: focus on weak and slow chords</option>
+            <option value="random">Random</option>
+          </select></label>
+        <label>Goal time <input type="number" id="opt-goal" min="0.5" max="30" step="0.5"> seconds</label>
+        <label><input type="checkbox" id="opt-lenient"> Forgive one stray note (e.g. an open string ringing)</label>
+        <label><input type="checkbox" id="opt-lefty"> Left-handed diagrams</label>
+        <button id="btn-reset">Reset progress for this tuning</button>
+      </div>
+    </section>
+
+    <p class="tip">Shortcuts: <kbd>Space</kbd> skip · <kbd>Enter</kbd> show/hide diagram.
+      No instrument handy? Click the fretboard to place notes.</p>
+    <p class="storage-note">Your progress is saved in this browser on this computer and kept between visits —
+      nothing is sent anywhere. Clearing your browsing data, or using a private window, will erase it.</p>
+  </main>
+
+  <script src="lib/vexflow.js"></script>
+  <script src="theory.js"></script>
+  <script src="instruments.js"></script>
+  <script src="voicings.js"></script>
+  <script src="diagram.js"></script>
+  <script src="progressions.js"></script>
+  <script src="progress.js"></script>
+  <script src="audio.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
