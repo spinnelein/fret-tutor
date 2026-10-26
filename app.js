@@ -250,8 +250,14 @@ function drawSpectrum(frame) {
     g.fillStyle = '#8b909c';
     g.fillText(Theory.midiName(m), x(f) + 3, H - 4);
   }
-  g.fillStyle = 'rgba(255, 93, 93, .5)';
-  g.fillRect(0, y(MicInput.settings.gateDb), W, 1);
+  // Noise filter: a note's peak must rise above this line at its own pitch to count.
+  g.strokeStyle = 'rgba(255, 93, 93, .7)';
+  g.beginPath();
+  for (let px = 0; px <= W; px += 2) {
+    const py = y(MicInput.thresholdDb(LO * Math.pow(HI / LO, px / W)));
+    px ? g.lineTo(px, py) : g.moveTo(px, py);
+  }
+  g.stroke();
   g.strokeStyle = '#6aa8ff';
   g.beginPath();
   const { spectrumDb, binHz } = frame;

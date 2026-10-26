@@ -54,16 +54,7 @@ const MicInput = (() => {
     // at each peak's own pitch: room noise is mostly low rumble, and one level for every pitch would
     // also hide quiet high notes (a thin guitar string) that are well clear of the noise.
     const floor = max * Math.pow(10, -opts.rangeDb / 20);
-    const profile = opts.noiseProfile;
-    const noiseAt = profile
-      ? f => {
-        const i = Math.round(freqToMidi(f)) - profile.lowMidi;
-        // Moving the noise filter slider from where the measurement set it raises or lowers the
-        // whole profile by the same amount.
-        const shift = profile.gate !== undefined ? opts.gateDb - profile.gate : 0;
-        return Math.pow(10, (profile.levels[Math.max(0, Math.min(profile.levels.length - 1, i))] + NOISE_MARGIN + shift) / 20);
-      }
-      : () => Math.pow(10, opts.gateDb / 20);
+    const noiseAt = f => Math.pow(10, thresholdDb(f, opts) / 20);
     const db = k => 20 * Math.log10(mag[k] || 1e-12);
 
     // Local maxima above the floor, with parabolic interpolation for a precise frequency.
@@ -132,6 +123,18 @@ const MicInput = (() => {
       .map(n => n.midi)
       .sort((x, y) => x - y);
     return { notes, peaks: audible, maxDb };
+  }
+
+  // The level (dB) a note at frequency f must reach to count: the room's measured noise at that
+  // pitch plus a margin, or without a measurement the noise filter's single level.
+  function thresholdDb(f, opts = settings) {
+    const profile = opts.noiseProfile;
+    if (!profile) return opts.gateDb;
+    const i = Math.round(freqToMidi(f)) - profile.lowMidi;
+    // Moving the noise filter slider from where the measurement set it raises or lowers the
+    // whole profile by the same amount.
+    const shift = profile.gate !== undefined ? opts.gateDb - profile.gate : 0;
+    return profile.levels[Math.max(0, Math.min(profile.levels.length - 1, i))] + NOISE_MARGIN + shift;
   }
 
   function tick() {
@@ -284,7 +287,7 @@ const MicInput = (() => {
   const isRunning = () => !!timer && ctx.state === 'running';
   const isWaitingForClick = () => !!timer && ctx.state === 'suspended';
 
-  return { start, stop, detectNotes, noiseProfile, pitch, settings, isRunning, isWaitingForClick, MIN_HZ, MAX_HZ };
+  return { start, stop, detectNotes, noiseProfile, pitch, thresholdDb, settings, isRunning, isWaitingForClick, MIN_HZ, MAX_HZ };
 })();
 
 if (typeof module !== 'undefined') module.exports = MicInput;
