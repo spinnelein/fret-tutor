@@ -191,7 +191,7 @@ async function selectInput() {
   if (mic) {
     try {
       await MicInput.start({ onChange: notes => { if (!calibration) { state.mic = notes; inputChanged(); } }, onFrame, onState: renderInputStatus });
-      if (!settings.micCalibrated || !settings.micNoise) startCalibration();
+      if (!settings.micCalibrated || !settings.micNoise?.step) startCalibration(); // step: quarter-semitone profile
     } catch (err) {
       micError = err.name === 'NotAllowedError' ? 'Mic: permission denied' : 'Mic: not available';
     }

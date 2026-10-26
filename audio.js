@@ -130,7 +130,8 @@ const MicInput = (() => {
   function thresholdDb(f, opts = settings) {
     const profile = opts.noiseProfile;
     if (!profile) return opts.gateDb;
-    const i = Math.round(freqToMidi(f)) - profile.lowMidi;
+    // Profiles measured in quarter-semitone bands (step 4); older ones in semitones.
+    const i = Math.round((freqToMidi(f) - profile.lowMidi) * (profile.step ?? 1));
     // Moving the noise filter slider from where the measurement set it raises or lowers the
     // whole profile by the same amount.
     const shift = profile.gate !== undefined ? opts.gateDb - profile.gate : 0;
@@ -267,13 +268,16 @@ const MicInput = (() => {
     return sampleRate / best.lag;
   }
 
-  // The room's noise at each semitone from C2 up: for each semitone band, the loudest level in each
-  // recorded moment, then the 90th percentile over the moments.
+  // The room's noise from C2 up, in quarter-semitone bands: for each band, the loudest level in
+  // each recorded moment, then the 90th percentile over the moments. Bands narrower than a semitone
+  // matter: mains hum (60 Hz and its overtones) sits half a semitone below every B and F♯, and in
+  // semitone bands it would count against those notes.
   function noiseProfile(spectraDb, binHz) {
-    const lowMidi = 36, highMidi = Math.ceil(freqToMidi(MAX_HZ));
+    const lowMidi = 36, highMidi = Math.ceil(freqToMidi(MAX_HZ)), step = 4;
     const levels = [];
-    for (let m = lowMidi; m <= highMidi; m++) {
-      const k0 = Math.floor(midiToFreq(m - 0.5) / binHz), k1 = Math.ceil(midiToFreq(m + 0.5) / binHz);
+    for (let b = lowMidi * step; b <= highMidi * step; b++) {
+      const m = b / step;
+      const k0 = Math.round(midiToFreq(m - 0.5 / step) / binHz), k1 = Math.round(midiToFreq(m + 0.5 / step) / binHz);
       const perFrame = spectraDb.map(spec => {
         let top = -200;
         for (let k = k0; k <= k1 && k < spec.length; k++) if (spec[k] > top) top = spec[k];
@@ -281,7 +285,7 @@ const MicInput = (() => {
       }).sort((a, b) => a - b);
       levels.push(Math.round(perFrame[Math.floor(perFrame.length * 0.9)] * 10) / 10);
     }
-    return { lowMidi, levels };
+    return { lowMidi, step, levels };
   }
 
   const isRunning = () => !!timer && ctx.state === 'running';
